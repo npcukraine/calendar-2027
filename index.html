@@ -6,19 +6,26 @@ const H=['id','sport','name','start','end','venue','country','city','manager','n
 let data=[],view='cards';const now=new Date(),CY=now.getFullYear(),CM=now.getMonth();let period=CY===2027?String(CM):'year';const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 function obj(r){let o={};H.forEach((h,i)=>o[h]=(r[i]??'').trim());return o}function date(s){let m=(s||'').match(/^(\d{2})\.(\d{2})\.(\d{4})$/);return m?new Date(+m[3],+m[2]-1,+m[1]):new Date(2999,0,1)}
 function csv(t){let a=[],r=[],c='',q=false;for(let i=0;i<t.length;i++){let x=t[i],n=t[i+1];if(x==='"'){if(q&&n==='"'){c+='"';i++}else q=!q}else if(x===','&&!q){r.push(c);c=''}else if((x==='\n'||x==='\r')&&!q){if(x==='\r'&&n==='\n')i++;r.push(c);a.push(r);r=[];c=''}else c+=x}if(c||r.length){r.push(c);a.push(r)}return a}
-function setSel(id,key,label){let vals=[...new Set(data.flatMap(e=>key==='type'?(e.types||e.type).split('|').map(x=>x.trim()):[e[key]]).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'uk'));$(id).innerHTML='<option value="">'+label+'</option>'+vals.map(v=>'<option>'+esc(v)+'</option>').join('')}
+function setSel(id,key,label){let selected=$(id).value;let vals=[...new Set(data.flatMap(e=>key==='type'?(e.types||e.type).split('|').map(x=>x.trim()):[e[key]]).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'uk'));$(id).innerHTML='<option value="">'+label+'</option>'+vals.map(v=>'<option>'+esc(v)+'</option>').join('');if(vals.includes(selected))$(id).value=selected}
 function eventDate(s){let m=(s||'').match(/^(\d{2})\.(\d{2})\.(\d{4})$/);if(!m)return null;let d=new Date(+m[3],+m[2]-1,+m[1]);return d.getFullYear()===+m[3]&&d.getMonth()===+m[2]-1&&d.getDate()===+m[1]?d:null}
+function dateBounds(s){
+ const exact=eventDate(s);if(exact)return[exact,exact];
+ const text=(s||'').trim().toLowerCase().replace(/\s+2027$/,'');
+ const months=['січень','лютий','березень','квітень','травень','червень','липень','серпень','вересень','жовтень','листопад','грудень'];
+ const month=months.indexOf(text);
+ if(month>=0)return[new Date(2027,month,1),new Date(2027,month+1,0)];
+ return null;
+}
 function inPeriod(e){
  if(period==='year')return true;
- let m=period==='current'?CM:+period, y=2027;
- let ms=new Date(y,m,1), me=new Date(y,m+1,0,23,59,59);
- let s=eventDate(e.start), en=eventDate(e.end), key=eventDate(e.sortDate);
- if(s&&en)return s<=me&&en>=ms;
- if(s)return s>=ms&&s<=me;
- if(en)return en>=ms&&en<=me;
+ const m=period==='current'?CM:+period,ms=new Date(2027,m,1),me=new Date(2027,m+1,0,23,59,59);
+ const start=dateBounds(e.start),end=dateBounds(e.end),key=eventDate(e.sortDate);
+ if(start&&end)return start[0]<=me&&end[1]>=ms;
+ const known=start||end;
+ if(known)return known[0]<=me&&known[1]>=ms;
  return key?key>=ms&&key<=me:false;
 }
-function filt(){let q=$('q').value.toLowerCase().trim(),sport=$('sport').value,type=$('type').value,country=$('country').value,status=$('status').value,cl=$('cls').value,hide=$('hide').checked;return data.filter(e=>{let blob=[e.sport,e.name,e.venue,e.country,e.city,e.manager,e.notes,e.types].join(' ').toLowerCase();return inPeriod(e)&&(!q||blob.includes(q))&&(!sport||e.sport===sport)&&(!type||e.types.split('|').map(x=>x.trim()).includes(type))&&(!country||e.country===country)&&(!status||e.status===status)&&(!cl||e.classification===cl)&&(!hide||e.status!=='Скасовано')}).sort((a,b)=>date(a.sortDate)-date(b.sortDate)||a.sport.localeCompare(b.sport,'uk')||a.name.localeCompare(b.name,'uk'))}
+function filt(){let q=$('q').value.toLowerCase().trim(),sport=$('sport').value,type=$('type').value,country=$('country').value,status=$('status').value,cl=$('cls').value,hide=$('hide').checked;return data.filter(e=>{let blob=[e.sport,e.name,e.venue,e.country,e.city,e.manager,e.notes,e.types].join(' ').toLowerCase();return inPeriod(e)&&(!q||blob.includes(q))&&(!sport||e.sport===sport)&&(!type||(e.types||e.type).split('|').map(x=>x.trim()).includes(type))&&(!country||e.country===country)&&(!status||e.status===status)&&(!cl||e.classification===cl)&&(!hide||e.status!=='Скасовано')}).sort((a,b)=>date(a.sortDate)-date(b.sortDate)||a.sport.localeCompare(b.sport,'uk')||a.name.localeCompare(b.name,'uk'))}
 function cls(s){return s==='Скасовано'?'cancel':s==='Попередньо'?'pre':s==='Потребує перевірки'?'check':''}
 function temporalBadge(e){
  if(e.status==='Скасовано'||e.datePrecision!=='Точні')return'';
@@ -36,7 +43,7 @@ function card(e){
  return`<article class="card ${e.status==='Скасовано'?'cancel':''}" data-id="${esc(e.id)}" tabindex="0" role="button"><div class="card-inner"><div class="datebox">${left}</div><div class="card-body"><div class="title">${esc(e.name)}</div><div class="sport">${esc(e.sport)}</div><div class="badges"><span class="b">${esc(e.type)}</span>${e.status&&e.status!=='Без статусу'?`<span class="b ${cls(e.status)}">${esc(e.status)}</span>`:''}${e.classification==='Так'?'<span class="b cls">Класифікація</span>':''}${temporalBadge(e)}</div><div class="info"><div class="k">Період</div><div>${esc(e.start||'уточнюється')} — ${esc(e.end||'уточнюється')}</div><div class="k">Місце</div><div>${esc(e.venue||'уточнюється')}</div>${e.manager?`<div class="k">Відповідальний</div><div>${esc(e.manager)}</div>`:''}</div>${e.notes?`<div class="notes">${esc(e.notes)}</div>`:''}</div></div></article>`}
 const mn=['Січень','Лютий','Березень','Квітень','Травень','Червень','Липень','Серпень','Вересень','Жовтень','Листопад','Грудень'];
 function cards(a){if(!a.length)return'<div class="empty">За вибраний період і фільтри заходів не знайдено</div>';return'<div class="cards">'+a.map(card).join('')+'</div>'}
-function table(a){if(!a.length)return'<div class="empty">За вибраний період і фільтри заходів не знайдено</div>';return`<div class="table"><table><thead><tr><th>Дата</th><th>Вид спорту</th><th>Захід</th><th>Місце</th><th>Тип</th><th>Статус</th><th>Відповідальний</th></tr></thead><tbody>${a.map(e=>`<tr><td>${esc(e.start||'уточнюється')}</td><td>${esc(e.sport)}</td><td>${esc(e.name)}</td><td>${esc(e.venue||'уточнюється')}</td><td>${esc(e.types)}</td><td>${esc(e.status)}</td><td>${esc(e.manager)}</td></tr>`).join('')}</tbody></table></div>`}
+function table(a){if(!a.length)return'<div class="empty">За вибраний період і фільтри заходів не знайдено</div>';return`<div class="table"><table><thead><tr><th>Дата</th><th>Вид спорту</th><th>Захід</th><th>Місце</th><th>Тип</th><th>Статус</th><th>Відповідальний</th></tr></thead><tbody>${a.map(e=>`<tr><td>${esc(e.start||'уточнюється')}</td><td>${esc(e.sport)}</td><td>${esc(e.name)}</td><td>${esc(e.venue||'уточнюється')}</td><td>${esc(e.types||e.type)}</td><td>${esc(e.status)}</td><td>${esc(e.manager)}</td></tr>`).join('')}</tbody></table></div>`}
 function periodName(){if(period==='year')return'Весь 2027 рік';return mn[+period]+' 2027'}
 function drawPeriods(){let a=[...mn.map((x,i)=>[String(i),x]),['year','Весь 2027 рік']];$('periodbar').innerHTML=a.map(x=>`<button data-p="${x[0]}" class="${period===x[0]?'active':''}">${x[1]}</button>`).join('');$('periodbar').querySelectorAll('button').forEach(b=>b.onclick=()=>{period=b.dataset.p;drawPeriods();render()})}
 
